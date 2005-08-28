@@ -1,0 +1,20 @@
+# Makefile for UUID
+#
+
+COMPONENT  = UUID
+TYPE       = aif
+INCLUDES   = <Lib$Dir>.GetOpt.<Lib$Dir>.Asm.,<Lib$Dir>.LongLong.,<Lib$Dir>.MD5.
+LIBS       = ${CLIB} \
+             ${GETOPTLIB} \
+             ${ASMLIB_ZM} \
+             ${LONGLONGLIB_ZM} \
+             <Lib$Dir>.MD5.o.libMD5zm
+OBJS       = \
+             o.sysdep \
+             o.uuid \
+             o.test
+
+include LibraryCommand
+
+#---------------------------------------------------------------------------
+# Dynamic dependencies:

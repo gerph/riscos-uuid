@@ -1,0 +1,27 @@
+/*******************************************************************
+ * File:     vars
+ * Purpose:  Variable handling
+ * Author:   Justin Fletcher
+ * Date:     20 Aug 2005
+ ******************************************************************/
+
+#ifndef VARS_H
+#define VARS_H
+
+/*************************************************** Gerph *********
+ Function:     var_init
+ Description:  Initialise our system variable(s)
+ Parameters:   pw = module private word
+ Returns:      none
+ ******************************************************************/
+void var_init(void *pw);
+
+/*************************************************** Gerph *********
+ Function:     var_final
+ Description:  Finalise our system variables
+ Parameters:   pw = module private word
+ Returns:      none
+ ******************************************************************/
+void var_final(void *pw);
+
+#endif

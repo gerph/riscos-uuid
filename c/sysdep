@@ -1,0 +1,224 @@
+/*
+ ** Copyright (c) 1990- 1993, 1996 Open Software Foundation, Inc.
+ ** Copyright (c) 1989 by Hewlett-Packard Company, Palo Alto, Ca. &
+ ** Digital Equipment Corporation, Maynard, Mass.
+ ** Copyright (c) 1998 Microsoft.
+ ** To anyone who acknowledges that this file is provided "AS IS"
+ ** without any express or implied warranty: permission to use, copy,
+ ** modify, and distribute this file for any purpose is hereby
+ ** granted without fee, provided that the above copyright notices and
+ ** this notice appears in all source code copies, and that none of
+ ** the names of Open Software Foundation, Inc., Hewlett-Packard
+ ** Company, or Digital Equipment Corporation be used in advertising
+ ** or publicity pertaining to distribution of the software without
+ ** specific, written prior permission.  Neither Open Software
+ ** Foundation, Inc., Hewlett-Packard Company, Microsoft, nor Digital Equipment
+ ** Corporation makes any representations about the suitability of
+ ** this software for any purpose.
+ */
+
+#if 0
+#include <unistd.h>
+#endif
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include "swis.h"
+#include "sysdep.h"
+
+/*-----------------------------------------------------------------------------*/
+/*
+   system dependent call to get IEEE node ID.
+   This sample implementation generates a random node ID
+ */
+void
+get_ieee_node_identifier( uuid_node_t * node )
+{
+    char seed[16];
+    static int inited = 0;
+    static uuid_node_t saved_node;
+
+    if( !inited ) {
+      unsigned long lo, hi;
+      /* Try to read the information from the OS */
+      if (_swix(OS_ReadSysInfo, _IN(0)|_OUTR(0,1), 4, &lo, &hi) ||
+          (lo==0 && hi==0))
+      {
+        /* Failed to read the address, so give up and use a random value */
+        get_random_info( seed );
+        seed[0] |= 0x01; /* JRF: Was 0x80 in uPnP code; changed to 0x01 to
+                                 match the example in rfc 4122 */
+        memcpy( &saved_node, seed, sizeof( uuid_node_t ) );
+      }
+      else
+      {
+        hi = htons(hi);
+        lo = htonl(lo);
+        memcpy( &saved_node.nodeID[0], &hi, 2);
+        memcpy( &saved_node.nodeID[2], &lo, 4);
+      }
+
+        inited = 1;
+    };
+
+    *node = saved_node;
+}
+
+/*-----------------------------------------------------------------------------*/
+/*
+   system dependent call to get the current system time.
+   Returned as 100ns ticks since Oct 15, 1582, but resolution may be
+   less than 100ns.
+ */
+
+#ifdef _WINDOWS_
+
+void
+get_system_time( uuid_time_t * uuid_time )
+{
+    ULARGE_INTEGER time;
+
+    GetSystemTimeAsFileTime( ( FILETIME * ) & time );
+
+    /*
+       NT keeps time in FILETIME format which is 100ns ticks since
+       Jan 1, 1601.  UUIDs use time in 100ns ticks since Oct 15, 1582.
+       The difference is 17 Days in Oct + 30 (Nov) + 31 (Dec)
+       + 18 years and 5 leap days.
+     */
+
+    time.QuadPart += ( unsigned __int64 )( 1000 * 1000 * 10 )   // seconds
+        * ( unsigned __int64 )( 60 * 60 * 24 )  // days
+        * ( unsigned __int64 )( 17 + 30 + 31 + 365 * 18 + 5 );  // # of days
+
+    *uuid_time = time.QuadPart;
+
+};
+
+/*-----------------------------------------------------------------------------*/
+void
+get_random_info( char seed[16] )
+{
+    MD5_CTX c;
+    typedef struct {
+        MEMORYSTATUS m;
+        SYSTEM_INFO s;
+        FILETIME t;
+        LARGE_INTEGER pc;
+        DWORD tc;
+        DWORD l;
+        char hostname[MAX_COMPUTERNAME_LENGTH + 1];
+    } randomness;
+    randomness r;
+
+    MD5Init( &c );
+    /*
+       memory usage stats
+     */
+    GlobalMemoryStatus( &r.m );
+    /*
+       random system stats
+     */
+    GetSystemInfo( &r.s );
+    /*
+       100ns resolution (nominally) time of day
+     */
+    GetSystemTimeAsFileTime( &r.t );
+    /*
+       high resolution performance counter
+     */
+    QueryPerformanceCounter( &r.pc );
+    /*
+       milliseconds since last boot
+     */
+    r.tc = GetTickCount(  );
+    r.l = MAX_COMPUTERNAME_LENGTH + 1;
+
+    GetComputerName( r.hostname, &r.l );
+    MD5Update( &c, &r, sizeof( randomness ) );
+    MD5Final( seed, &c );
+};
+#else
+
+/*-----------------------------------------------------------------------------*/
+void
+get_system_time( uuid_time_t * uuid_time )
+{
+#ifndef __riscos
+    struct timeval tp;
+
+    gettimeofday( &tp, ( struct timezone * )0 );
+
+    /*
+       Offset between UUID formatted times and Unix formatted times.
+       UUID UTC base time is October 15, 1582.
+       Unix base time is January 1, 1970.
+     */
+    *uuid_time = ( tp.tv_sec * 10000000 ) + ( tp.tv_usec * 10 ) +
+        I64( 0x01B21DD213814000 );
+#else
+    /* FIXME:  Lie. Lots. */
+    unsigned long words[2];
+    ulonglong_t num, mult, adjust, csperday;
+    words[0] = 3; /* Read 5 byte time */
+    words[1] = 0;
+    _swix(OS_Word, _INR(0,1), 14, &words);
+    num.lo = words[0];
+    num.hi = words[1];
+    /* num now contains the number of cs since 1 Jan 1900, which we need
+       to translate to nanoseconds since Oct 15 1582.
+       There are 77 days from 15 Oct 1582 to 1 Jan 1583 - 30 days in
+       November, 31 in December, and 16 left over from the 31 days in
+       October.
+       Leap years occur every 4 years for the intervening years, starting
+       at 1584, which gives us 78 leap years.
+       However, leap years do not occur on years divisible by 100 unless it
+       is also divisible by 400, which gives us no leap years in 1700 and
+       1800, so we only have 76 leap years.
+       There are 365 days in a year, and 317 years between 1583 and 1900.
+       365 days * 317 = 115705 days.
+       plus 78 leap days = 115783
+       plus 78 days to end of year = 115861
+     */
+    LL_UI2L(adjust, 365*317+77+78);   /* The above calculation */
+    LL_UI2L(csperday, 100*60*60*24);
+    LL_MUL(adjust, adjust, csperday); /* The adjustment in cs */
+    LL_ADD(num, num, adjust);         /* number of cs since 15 Oct 1582 */
+    LL_UI2L(mult, 10000000/100);      /* 100 nanoseconds in a cs */
+    LL_MUL(num, num, mult);           /* Yay, number of 100ns ticks since ... */
+
+    uuid_time->hi = num.hi;
+    uuid_time->lo = num.lo;
+#endif
+}
+
+/*-----------------------------------------------------------------------------*/
+void
+get_random_info( char seed[16] )
+{
+    MD5_CTX c;
+    char *hn;
+    typedef struct {
+        unsigned long monotime;
+        unsigned long fivebyte[2];
+        char hostname[256];
+    } randomness;
+    randomness r;
+
+    MD5Init( &c );
+
+    /* FIXME: Insert randomness */
+    _swix(OS_ReadMonotonicTime, _OUT(0), &r.monotime);
+    r.fivebyte[0] = 3; /* Time as 5 bytes value */
+    _swix(OS_Word, _INR(0,1), 14, &r.fivebyte);
+    hn = getenv("Inet$Hostname");
+    if (hn==NULL)
+    { /* Nothing, we get random stack data, which is probably ok */}
+    else
+      strncpy(r.hostname, hn, 256);
+
+    MD5Update( &c, (unsigned char *)&r, sizeof( randomness ) );
+    MD5Final( (unsigned char *)seed, &c );
+}
+
+#endif

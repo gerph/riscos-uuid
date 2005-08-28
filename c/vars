@@ -1,0 +1,104 @@
+/*******************************************************************
+ * File:     vars
+ * Purpose:  Variable handling
+ * Author:   Justin Fletcher
+ * Date:     20 Aug 2005
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <string.h>
+#include "swis.h"
+#include "sysdep.h"
+#include "uuid.h"
+#include "modhead.h"
+
+/* Modern style variables with workspace */
+#define MODERN_VARIABLES
+
+static char uuid_generate[37];
+
+static _kernel_oserror *var_setup_code(const char *var,
+                                       void (*writer)(void),
+                                       void (*reader)(void), void *pw)
+{
+  _kernel_oserror *err;
+
+#ifdef MODERN_VARIABLES
+  unsigned int code[4];
+
+  code[0]=0xe59ff000;
+  code[1]=0xe59ff000;
+  code[2]=(int)writer;
+  code[3]=(int)reader;
+#else
+  unsigned int code[8];
+
+  code[0]=0xea000001; /* 0: B &c */
+  code[1]=0xe59fc010; /* 4: LDR r12, &1c */
+  code[2]=0xe59ff008; /* 8: LDR pc, &18 */
+  code[3]=0xe59fc008; /* C: LDR r12, &1c */
+  code[4]=0xe51ff004; /* 10: LDR pc, &14 */
+  code[5]=(int)writer; /* 14: */
+  code[6]=(int)reader; /* 18: */
+  code[7]=(int)pw; /* 1c: */
+#endif
+
+  err = _swix(OS_SetVarVal,_INR(0,5),var,code,sizeof(code),0,16,pw);
+
+#ifdef MODERN_VARIABLES
+#else
+  _swix(OS_SynchroniseCodeAreas,_IN(0),0);
+#endif
+  return err;
+}
+
+/*********************************************** <c> Gerph *********
+ Function:     var_uuid_read
+ Description:  Read a system variable and store is value in a place
+ Parameters:   none
+ Returns:      r0-> value
+               r2 = length
+ ******************************************************************/
+_kernel_oserror *var_uuid_read(_kernel_swi_regs *regs, void *pw)
+{
+  uuid_upnp uuid;
+  if (!uuid_create(&uuid))
+    return err_CantGenerate;
+  uuid_unpack(&uuid, uuid_generate);
+  regs->r[0]=(int)uuid_generate;
+  regs->r[2]=36;
+  return NULL;
+}
+
+/*************************************************** Gerph *********
+ Function:     var_uuid_write
+ Description:  Write to the UUID variable
+ Parameters:   none
+ Returns:      always an error
+ ******************************************************************/
+_kernel_oserror *var_uuid_write(_kernel_swi_regs *regs, void *pw)
+{
+  return err_CannotWriteToUUIDVar;
+}
+
+/*************************************************** Gerph *********
+ Function:     var_init
+ Description:  Initialise our system variable(s)
+ Parameters:   pw = module private word
+ Returns:      none
+ ******************************************************************/
+void var_init(void *pw)
+{
+  var_setup_code(UUID_VAR, var_uuid_write_entry, var_uuid_read_entry, pw);
+}
+
+/*************************************************** Gerph *********
+ Function:     var_final
+ Description:  Finalise our system variables
+ Parameters:   pw = module private word
+ Returns:      none
+ ******************************************************************/
+void var_final(void *pw)
+{
+  _swix(OS_SetVarVal,_INR(0,4),UUID_VAR,0,-1,0,16); /* Delete var */
+}

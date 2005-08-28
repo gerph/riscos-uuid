@@ -1,0 +1,30 @@
+/*******************************************************************
+ * File:     main
+ * Purpose:  Test code for the UUID stuff
+ * Author:   Justin Fletcher
+ * Date:     01 May 2005
+ ******************************************************************/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "sysdep.h"
+#include "uuid.h"
+
+int main(void)
+{
+  uuid_upnp uuid1;
+  uuid_upnp uuid2;
+  char buf[40];
+  if ( !uuid_create(&uuid1) )
+    printf("Failed to create uuid\n"), exit(1);
+  if ( !uuid_create(&uuid2) )
+    printf("Failed to create uuid\n"), exit(1);
+
+  uuid_unpack(&uuid1, buf);
+  printf("uuid1 = %s\n", buf);
+  uuid_unpack(&uuid2, buf);
+  printf("uuid2 = %s\n", buf);
+  return 0;
+}
