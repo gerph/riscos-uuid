@@ -3,7 +3,7 @@
 
 COMPONENT  = UUID
 TYPE       = aif
-INCLUDES   = <Lib$Dir>.GetOpt.<Lib$Dir>.Asm.,<Lib$Dir>.LongLong.,<Lib$Dir>.MD5.
+INCLUDES   = <Lib$Dir>.GetOpt.,<Lib$Dir>.Asm.,<Lib$Dir>.LongLong.,<Lib$Dir>.MD5.
 LIBS       = ${CLIB} \
              ${GETOPTLIB} \
              ${ASMLIB_ZM} \

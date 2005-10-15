@@ -57,7 +57,7 @@ The full list of the UUID versions which can be generated is as follows :
 SWIs
 ----
 
-UUID_Convert (&?0)
+UUID_Convert (&582C0)
 Converts between Universally Unique Indentifier representations
 => R0 = input representation type
    R1 = pointer to input representation data
@@ -69,7 +69,7 @@ intentionally similar to the MimeMap_Translate SWI. The SWI may also be
 used to perform a syntax check on the string-representation UUIDs.
 
 
-UUID_Create (&?1)
+UUID_Create (&582C1)
 Creates a new Universally Unique Identifier
 => R0 = flags :
           b0-4 = output representation type
@@ -84,7 +84,7 @@ Creates a new Universally Unique Identifier
 This SWI is used to generate a new UUID.
 
 
-UUID_Compare (&?2)
+UUID_Compare (&582C2)
 Compares two Universally Unique Indentifiers for equality
 => R0 = first UUID representation type
    R1 = pointer to first UUID data
