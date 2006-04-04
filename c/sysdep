@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include "swis.h"
 #include "sysdep.h"
+#include "riscos/OSReadSysInfo.h"
 
 /*-----------------------------------------------------------------------------*/
 /*
@@ -41,7 +42,9 @@ get_ieee_node_identifier( uuid_node_t * node )
     if( !inited ) {
       unsigned long lo, hi;
       /* Try to read the information from the OS */
-      if (_swix(OS_ReadSysInfo, _IN(0)|_OUTR(0,1), 4, &lo, &hi) ||
+      if (_swix(OS_ReadSysInfo, _IN(0)|_OUTR(0,1),
+                                ReadSysInfoReason_EthernetAddress,
+                                &lo, &hi) ||
           (lo==0 && hi==0))
       {
         /* Failed to read the address, so give up and use a random value */
