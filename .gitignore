@@ -3,3 +3,6 @@ oz/
 oz32/
 rm/
 rm32/
+/artifacts/
+/ci-logs/
+/riscos-build/
