@@ -265,8 +265,8 @@ _kernel_oserror *SWI_Create(int number, _kernel_swi_regs *r, void *pw)
           return err_InvalidNameLength;
         if (version == UUID_Version_NameMD5)
           uuid_create_md5_from_name(&uuid, *base, name, namelen);
-        /* else */
-          /* uuid_create_sha1_from_name(&uuid, *base, name, namelen); */
+        else
+          uuid_create_sha1_from_name(&uuid, *base, name, namelen);
       }
       break;
 
