@@ -1,0 +1,456 @@
+<?xml version="1.0"?>
+<!DOCTYPE riscos-prm PUBLIC "-//Gerph//DTD PRM documentation 1.03//EN"
+                            "http://gerph.org/dtd/103/prm.dtd">
+
+<riscos-prm>
+<chapter title="UUID module">
+
+<section title="Introduction">
+<p>
+The UUID module generates Universally Unique Identifiers (UUIDs) and converts them
+between their binary and text forms. A UUID is a 128-bit value which can be generated
+without consulting a central registry and which is statistically certain to differ from
+every other UUID. It is written in text as five groups of hexadecimal digits:
+</p>
+<p>
+<extended-example type="format">
+f81d4fae-7dec-11d0-a765-00a0c91e6bf6
+</extended-example>
+</p>
+<p>
+UUIDs are standardised in RFC 4122, which also defines the URN form
+<userinput>urn:uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6</userinput>. The module provides
+the three forms of UUID which can be generated without further hardware or policy
+decisions - time-based, and the two name-based forms - and a system variable which
+returns a new time-based UUID each time it is read. Storing the identifiers it hands out,
+and deciding what an identifier names, belong to its clients.
+</p>
+</section>
+
+<section title="Overview">
+<p>
+The module offers three SWIs. <reference type="swi" name="UUID_Create"/> generates a
+UUID, <reference type="swi" name="UUID_Convert"/> changes a UUID from one representation
+to another (and so also checks that a text form is well-formed), and
+<reference type="swi" name="UUID_Compare"/> tests two UUIDs, given in any representation,
+for equality or ordering. Clients which only need a fresh identifier as text can read the
+system variable <sysvar>UUID$Generate</sysvar> instead.
+</p>
+<p>
+The interface of <reference type="swi" name="UUID_Convert"/> and
+<reference type="swi" name="UUID_Compare"/>, in which each value is described by a
+representation type and a pointer, is deliberately the same as that of
+<userinput>MimeMap_Translate</userinput>.
+</p>
+</section>
+
+<section title="Technical details">
+
+<subsection title="Representations">
+<p>
+A UUID may be held in one of three representations. Every SWI which takes or returns a
+UUID is given the representation as a number, and a buffer of the size in the table.
+</p>
+<p>
+<value-table head-number="Type" head-value="Representation">
+ <value number="0">Binary data block, 16 bytes, laid out as described below</value>
+ <value number="1">Text, a zero-terminated string of 36 characters (37 bytes including the
+ terminator) in the form <userinput>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</userinput></value>
+ <value number="2">URN, a zero-terminated string of 45 characters (46 bytes including the
+ terminator) in the form <userinput>urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</userinput></value>
+</value-table>
+</p>
+<p>
+The text and URN forms the module produces use lower case hexadecimal digits. Those it
+accepts may be in either case. The URN prefix is accepted in either case too, and in the
+URN form any of the hexadecimal digits may instead be written as a <userinput>%</userinput>
+followed by the two hexadecimal digits of the character, as RFC 2141 permits. The
+<userinput>-</userinput> separators must be present, in the positions shown, in both text
+forms.
+</p>
+</subsection>
+
+<subsection title="Binary layout">
+<p>
+The binary representation is the 16 bytes of the structure below. The first three fields
+are 32-bit and 16-bit integers held in the byte order of the processor (little-endian),
+so the binary form is <em>not</em> in the network byte order which RFC 4122 gives for the
+fields of a UUID. Convert the form with <reference type="swi" name="UUID_Convert"/>
+rather than by rearranging the bytes.
+</p>
+<p>
+<offset-table head-number="Offset" head-name="Field" head-data-size="Size" head-value="Contents">
+ <offset number="0" name="time_low" data-size="4">The low 32 bits of the time (the first group of digits of the text form)</offset>
+ <offset number="4" name="time_mid" data-size="2">The middle 16 bits of the time (the second group)</offset>
+ <offset number="6" name="time_hi_and_version" data-size="2">The high 12 bits of the time in bits 0-11, and the UUID version in bits 12-15 (the third group)</offset>
+ <offset number="8" name="clock_seq_hi_and_reserved" data-size="1">The high 6 bits of the clock sequence in bits 0-5, and the variant in bits 6-7, which is 2 (binary 10) for the UUIDs of RFC 4122 (the first two digits of the fourth group)</offset>
+ <offset number="9" name="clock_seq_low" data-size="1">The low 8 bits of the clock sequence (the last two digits of the fourth group)</offset>
+ <offset number="10" name="node" data-size="6">The node identifier, as six bytes in the order they are written in the text form (the fifth group)</offset>
+</offset-table>
+</p>
+<p>
+For a name-based UUID the fields other than the version and variant bits are taken from the
+hash of the namespace and name, and have no meaning of their own.
+</p>
+</subsection>
+
+<subsection title="UUID versions">
+<p>
+The version of a UUID states how it was generated. It is held in the high four bits of
+<userinput>time_hi_and_version</userinput> and is chosen with bits 4-7 of the flags
+given to <reference type="swi" name="UUID_Create"/>.
+</p>
+<p>
+<value-table head-number="Version" head-value="Meaning">
+ <value number="1">Time-based UUID, generated from the clock, a clock sequence and the node identifier</value>
+ <value number="2">DCE security UUID. The module does not generate these</value>
+ <value number="3">Name-based UUID, using the MD5 hash of a namespace and a name</value>
+ <value number="4">Randomly generated UUID. The module does not generate these</value>
+ <value number="5">Name-based UUID, using the SHA-1 hash of a namespace and a name</value>
+</value-table>
+</p>
+<p>
+Requesting a version which the module does not generate, or a version outside this range,
+returns the error <reference type="error" name="UUID_InvalidVersion"/>.
+</p>
+</subsection>
+
+<subsection title="Time-based UUIDs">
+<p>
+A time-based UUID is made from the time, a clock sequence, and a node identifier. The time
+is the system clock, counted in 100 nanosecond units since 15 October 1582 (although the
+clock does not have so fine a resolution). The node identifier is the Ethernet hardware
+address of the machine, if the system can supply one; otherwise it is a random value with
+the multicast bit set, as RFC 4122 recommends, which is chosen once and kept for as long as
+the module is running.
+</p>
+<p>
+The clock sequence is chosen at random when the module has no record of an earlier UUID,
+or when the node identifier has changed, and is increased if the clock is found to have
+gone backwards. This keeps the UUIDs distinct if the clock is reset or the network
+hardware is changed. The module keeps the clock sequence, the time of the last UUID and
+the node identifier in the file <filename type="riscos">UUID.State</filename>, which it
+reads from <filename type="riscos">Choices:</filename> when it starts and writes back to
+<filename type="riscos">&lt;Choices$Write&gt;</filename> when the module is finalised.
+</p>
+</subsection>
+
+<subsection title="Name-based UUIDs">
+<p>
+A name-based UUID is the same every time it is generated from the same namespace and
+name. This lets a tool or application be given a stable identifier from its name, with the
+namespace keeping names from different sources apart. The namespace is itself a UUID,
+given to <reference type="swi" name="UUID_Create"/> in its binary representation. The
+name is a sequence of bytes, given either with a length or as a zero-terminated string.
+</p>
+<p>
+RFC 4122 defines the namespace UUIDs for domain names, URLs, ISO object identifiers and
+X.500 names. The one for domain names is
+<userinput>6ba7b810-9dad-11d1-80b4-00c04fd430c8</userinput>; the MD5 name-based UUID for
+the name <userinput>www.example.com</userinput> within it is
+<userinput>5df41881-3aed-3515-88a7-2f4a814cf09e</userinput>.
+</p>
+</subsection>
+
+</section>
+
+<section title="SWI calls">
+<p>
+The module allocates the SWI chunk <userinput>UUID_</userinput> at &hex;582C0.
+</p>
+
+<swi-definition name="UUID_Convert" number="582C0"
+                description="Converts a UUID from one representation to another">
+<entry>
+ <register-use number="0">Input representation type: 0 (binary), 1 (text) or 2 (URN)</register-use>
+ <register-use number="1">Pointer to the UUID in the input representation</register-use>
+ <register-use number="2">Output representation type: 0 (binary), 1 (text) or 2 (URN)</register-use>
+ <register-use number="3">Pointer to a buffer to receive the UUID in the output representation</register-use>
+</entry>
+<exit>
+ <register-use number="0-3" state="preserved"/>
+</exit>
+<use>
+<p>
+This SWI converts a UUID between the representations described in Technical details. The
+output buffer must be 16 bytes for the binary representation, 37 bytes for the text
+representation and 46 bytes for the URN representation. The input and output may use the
+same representation, in which case the SWI checks the text or URN form is well-formed and
+copies it.
+</p>
+<p>
+The text and URN forms are checked as they are converted. The text form must be exactly 36
+characters, the hexadecimal digits and the <userinput>-</userinput> separators in the
+places shown, and the URN form must begin with <userinput>urn:uuid:</userinput>. The input
+representation type must be 0, 1 or 2; the SWI does not check this, and the result for
+any other value is not defined.
+</p>
+<p>
+If the output representation is not 0, 1 or 2 the error
+<reference type="error" name="UUID_InvalidRepresentation"/> is returned. A malformed text
+string gives <reference type="error" name="UUID_InvalidString"/> and a malformed URN
+gives <reference type="error" name="UUID_InvalidURN"/>.
+</p>
+</use>
+<related>
+ <reference type="swi" name="UUID_Create"/>
+ <reference type="swi" name="UUID_Compare"/>
+</related>
+</swi-definition>
+
+<swi-definition name="UUID_Create" number="582C1"
+                description="Creates a new Universally Unique Identifier">
+<entry>
+ <register-use number="0">Flags:
+  <bitfield-table>
+   <bit number="0-3" name="Representation">
+    <p>
+    <value-table head-number="Value" head-value="Meaning">
+     <value number="0">Binary representation, 16 bytes</value>
+     <value number="1">Text representation, 37 bytes</value>
+     <value number="2">URN representation, 46 bytes</value>
+    </value-table>
+    </p>
+   </bit>
+   <bit number="4-7" name="Version">
+    <p>
+    <value-table head-number="Value" head-value="Meaning">
+     <value number="1">Time-based UUID</value>
+     <value number="3">Name-based UUID, using MD5</value>
+     <value number="5">Name-based UUID, using SHA-1</value>
+    </value-table>
+    </p>
+    Other values give an error.
+   </bit>
+   <bit number="8-31" state="reserved">Reserved, must be 0</bit>
+  </bitfield-table>
+ </register-use>
+ <register-use number="1">Pointer to a buffer to receive the UUID, of the size for the representation</register-use>
+ <register-use number="2">Name-based versions only: pointer to the namespace, as a UUID in the binary representation</register-use>
+ <register-use number="3">Name-based versions only: pointer to the name</register-use>
+ <register-use number="4">Name-based versions only: length of the name in bytes, or 0 if the name is a zero-terminated string</register-use>
+</entry>
+<exit>
+ <register-use number="0-4" state="preserved"/>
+</exit>
+<use>
+<p>
+This SWI generates a new UUID and writes it, in the representation requested, to the buffer
+in R1. For a time-based UUID, R2 to R4 are not used and need not be valid.
+</p>
+<p>
+For a name-based UUID the namespace is read from R2 as 16 bytes in the binary
+representation (use <reference type="swi" name="UUID_Convert"/> to make one from text).
+The name is read from R3. If R4 is 0 the name is the characters up to a terminating zero
+byte; otherwise it is the number of bytes in R4. A negative length returns the error
+<reference type="error" name="UUID_InvalidNameLength"/>.
+</p>
+<p>
+A version which the module does not generate returns
+<reference type="error" name="UUID_InvalidVersion"/>, and a representation other than 0,
+1 or 2 returns <reference type="error" name="UUID_InvalidRepresentation"/>. If a time-based
+UUID cannot be generated the error <reference type="error" name="UUID_CantGenerate"/> is
+returned.
+</p>
+</use>
+<example>
+<p>
+<extended-example type="c">
+Generating a time-based UUID as text
+<br/><br/>
+<userinput>char uuid[37];</userinput><br/>
+<userinput>_kernel_oserror *err;</userinput><br/>
+<userinput>err = _swix(UUID_Create, _INR(0,1), (1&lt;&lt;4) | 1, uuid);</userinput><br/>
+<userinput>if (err == NULL)</userinput><br/>
+<userinput>    printf("%s\n", uuid);</userinput>
+</extended-example>
+</p>
+</example>
+<related>
+ <reference type="swi" name="UUID_Convert"/>
+ <reference type="swi" name="UUID_Compare"/>
+ <reference type="sysvar" name="UUID$Generate"/>
+</related>
+</swi-definition>
+
+<swi-definition name="UUID_Compare" number="582C2"
+                description="Compares two Universally Unique Identifiers">
+<entry>
+ <register-use number="0">First representation type: 0 (binary), 1 (text) or 2 (URN)</register-use>
+ <register-use number="1">Pointer to the first UUID</register-use>
+ <register-use number="2">Second representation type: 0 (binary), 1 (text) or 2 (URN)</register-use>
+ <register-use number="3">Pointer to the second UUID</register-use>
+</entry>
+<exit>
+ <register-use number="0">
+  <p>Result of the comparison:</p>
+  <p>
+  <value-table head-number="Value" head-value="Meaning">
+   <value number="-1">The first UUID orders before the second</value>
+   <value number="0">The two UUIDs are equal</value>
+   <value number="1">The first UUID orders after the second</value>
+  </value-table>
+  </p>
+ </register-use>
+ <register-use number="1-3" state="preserved"/>
+</exit>
+<use>
+<p>
+This SWI compares two UUIDs, each of which may be in any representation, and need not be
+in the same one. The UUIDs are ordered by their fields in the order they are written in
+the text form, which is the order in which their text forms would sort. This ordering
+does not reflect the order in which the UUIDs were created.
+</p>
+<p>
+Either UUID may return the errors of <reference type="swi" name="UUID_Convert"/> if it is
+a text or URN form which is not well-formed.
+</p>
+</use>
+<related>
+ <reference type="swi" name="UUID_Convert"/>
+</related>
+</swi-definition>
+
+</section>
+
+<section title="System variables">
+
+<sysvar-definition name="UUID$Generate" description="A newly generated UUID">
+<use>
+<p>
+Reading this variable returns a new time-based UUID in the text representation, a string of
+36 characters. It is a code variable, so every read generates a different value. Take a
+copy of the value before using it: reading the variable again, even to find its length,
+returns another UUID.
+</p>
+<p>
+The variable cannot be set or deleted by a client; an attempt to write to it returns the
+error <reference type="error" name="UUID_CannotWriteToUUIDVar"/>. It is created when the
+module starts and removed when the module is finalised.
+</p>
+</use>
+<example>
+<p><userinput>*Show UUID$Generate</userinput></p>
+</example>
+<related>
+ <reference type="swi" name="UUID_Create"/>
+</related>
+</sysvar-definition>
+
+</section>
+
+<section title="Error messages">
+<p>
+The module allocates the errors from &hex;81AFC0.
+</p>
+
+<error-definition name="UUID_CantGenerate" number="81AFC0" description="Cannot generate UUID">
+<use><p>A time-based UUID could not be generated.</p></use>
+</error-definition>
+
+<error-definition name="UUID_InvalidNameLength" number="81AFC1"
+                  description="Invalid length for UUID generation within namespace">
+<use><p>The length of the name given to <reference type="swi" name="UUID_Create"/> was negative.</p></use>
+</error-definition>
+
+<error-definition name="UUID_InvalidVersion" number="81AFC2" description="Invalid UUID version specified">
+<use><p>The version requested from <reference type="swi" name="UUID_Create"/> is not one which the module generates: it is 0, 2, 4, or more than 5.</p></use>
+</error-definition>
+
+<error-definition name="UUID_InvalidRepresentation" number="81AFC3"
+                  description="Invalid UUID representation type">
+<use><p>The representation requested for the output of <reference type="swi" name="UUID_Create"/> or <reference type="swi" name="UUID_Convert"/> is not 0, 1 or 2.</p></use>
+</error-definition>
+
+<error-definition name="UUID_InvalidURN" number="81AFC4" description="Invalid UUID URN string">
+<use><p>A URN given to <reference type="swi" name="UUID_Convert"/> or <reference type="swi" name="UUID_Compare"/> did not begin with <userinput>urn:uuid:</userinput>, was not followed by exactly 36 characters of UUID, or had a character in it which is not a hexadecimal digit, a correctly placed <userinput>-</userinput>, or a complete <userinput>%</userinput> escape of a hexadecimal digit.</p></use>
+</error-definition>
+
+<error-definition name="UUID_InvalidString" number="81AFC5" description="Invalid UUID string">
+<use><p>A text UUID given to <reference type="swi" name="UUID_Convert"/> or <reference type="swi" name="UUID_Compare"/> was not 36 characters long, or had a character in it which is not a hexadecimal digit or a correctly placed <userinput>-</userinput>.</p></use>
+</error-definition>
+
+<error-definition name="UUID_CannotWriteToUUIDVar" number="81AFC6"
+                  description="UUID system variable is read-only">
+<use><p>An attempt was made to set <sysvar>UUID$Generate</sysvar>.</p></use>
+</error-definition>
+
+</section>
+
+<section title="Examples">
+
+<subsection title="Reading a new UUID from BASIC">
+<p>
+A new time-based identifier is read from the system variable. The value is copied into a
+BASIC string before it is used.
+</p>
+<p>
+<extended-example type="basic">
+<userinput>DIM buffer% 40</userinput><br/>
+<userinput>SYS "OS_ReadVarVal", "UUID$Generate", buffer%, 40, 0, 3 TO ,,length%</userinput><br/>
+<userinput>buffer%?length% = 13</userinput><br/>
+<userinput>id$ = $buffer%</userinput><br/>
+<userinput>PRINT id$</userinput>
+</extended-example>
+</p>
+</subsection>
+
+<subsection title="Making a name-based UUID">
+<p>
+A name-based UUID is made in a namespace given in its binary form, converted here from the
+text form of the domain name namespace.
+</p>
+<p>
+<extended-example type="basic">
+<userinput>DIM namespace% 16, name% 40, result% 40</userinput><br/>
+<userinput>SYS "UUID_Convert", 1, "6ba7b810-9dad-11d1-80b4-00c04fd430c8", 0, namespace%</userinput><br/>
+<userinput>$name% = "www.example.com"</userinput><br/>
+<userinput>SYS "UUID_Create", (3&lt;&lt;4) + 1, result%, namespace%, name%, LEN($name%)</userinput><br/>
+<userinput>PRINT $result%</userinput>
+</extended-example>
+</p>
+<p>
+This prints <userinput>5df41881-3aed-3515-88a7-2f4a814cf09e</userinput>.
+</p>
+</subsection>
+
+<subsection title="Checking whether two UUIDs match">
+<p>
+The two UUIDs may be held in different forms.
+</p>
+<p>
+<extended-example type="basic">
+<userinput>DIM binary% 16</userinput><br/>
+<userinput>SYS "UUID_Convert", 1, "f81d4fae-7dec-11d0-a765-00a0c91e6bf6", 0, binary%</userinput><br/>
+<userinput>SYS "UUID_Compare", 0, binary%, 2, "urn:uuid:F81D4FAE-7DEC-11D0-A765-00A0C91E6BF6" TO result%</userinput><br/>
+<userinput>IF result% = 0 THEN PRINT "Same UUID"</userinput>
+</extended-example>
+</p>
+</subsection>
+
+</section>
+
+</chapter>
+
+<!-- MetaData -->
+<meta>
+ <maintainer>
+  <email name="Charles Ferguson" address="gerph@gerph.org"/>
+ </maintainer>
+ <disclaimer>
+  <p>
+  &copy; Justin Fletcher, 2005-2026. Distributed under the BSD 3-Clause License.
+  </p>
+ </disclaimer>
+
+ <history>
+  <revision number="1" author="Charles Ferguson" date="9 Oct 2026" title="Initial documentation">
+   <change>Documented the module's SWIs, system variable and errors in PRM-in-XML format.</change>
+  </revision>
+ </history>
+
+ <related>
+  <reference type="link" href="https://www.rfc-editor.org/rfc/rfc4122" name="RFC 4122: A Universally Unique IDentifier (UUID) URN Namespace"/>
+ </related>
+</meta>
+</riscos-prm>
